@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:util="http://www.springframework.org/schema/util"
+       xmlns:batch="http://www.springframework.org/schema/batch"
+       xsi:schemaLocation="
+    http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd
+    http://www.springframework.org/schema/batch http://www.springframework.org/schema/batch/spring-batch-2.2.xsd">
+
+    <batch:job id="mainJob" incrementer="incrementer">
+<!--        <batch:step id="cleanupStep" next="mainStep">
+            <batch:tasklet ref="cleanupTask" />
+        </batch:step>-->
+        <batch:step id="mainStep">
+            <batch:tasklet>
+                <batch:chunk reader="reader" processor="processor" writer="writer" skip-policy="alwaysSkipItemSkipPolicy"
+                             commit-interval="10" retry-limit="3">
+                    <batch:retryable-exception-classes>
+                        <batch:include class="app.exception.RetryableException" />
+                        <batch:include class="org.springframework.dao.DeadlockLoserDataAccessException" />
+                    </batch:retryable-exception-classes>
+                </batch:chunk>
+            </batch:tasklet>
+            <batch:listeners>
+                <batch:listener ref="batchListener" />
+            </batch:listeners>
+        </batch:step>
+        <batch:listeners>
+            <batch:listener ref="batchListener" />
+        </batch:listeners>
+    </batch:job>
+
+    <!-- rerun -->
+
+    <batch:job id="rerunJob" incrementer="incrementer">
+        <batch:validator ref="rerunValidator" />
+        <batch:step id="rerunStep">
+            <batch:tasklet>
+                <batch:chunk reader="rerunItemReader" writer="rerunItemWriter" skip-policy="alwaysSkipItemSkipPolicy"
+                             commit-interval="10" retry-limit="3">
+                    <batch:retryable-exception-classes>
+                        <batch:include class="app.exception.RetryableException" />
+                        <batch:include class="org.springframework.dao.DeadlockLoserDataAccessException" />
+                    </batch:retryable-exception-classes>
+                </batch:chunk>
+            </batch:tasklet>
+            <batch:listeners>
+                <batch:listener ref="rerunListener" />
+            </batch:listeners>
+        </batch:step>
+        <batch:listeners>
+            <batch:listener ref="rerunListener" />
+        </batch:listeners>
+    </batch:job>
+
+    <bean id="rerunItemReader" class="org.springframework.batch.item.database.JdbcCursorItemReader" scope="job">
+        <property name="dataSource" ref="dataSource" />
+        <property name="sql">
+            <value><![CDATA[
+            select *
+            from application_log
+            where status not in ('CANCELLED', 'CLOSED')
+            and recoverable = 'Y' and ref_id = ?
+            ]]></value>
+        </property>
+        <property name="rowMapper">
+            <bean class="app.batch.reader.RerunItemRowMapper" />
+        </property>
+        <property name="preparedStatementSetter">
+            <bean class="org.springframework.batch.core.resource.ListPreparedStatementSetter">
+                <property name="parameters">
+                    <list>
+                        <value>#{new Integer(jobParameters[batchId] ?: '0')}</value>
+                    </list>
+                </property>
+            </bean>
+        </property>
+    </bean>
+    <!--
+    <bean id="rerunItemReader" class="app.batch.reader.CustomJpaPagingItemReader" scope="job">
+        <property name="entityManagerFactory" ref="entityManagerFactory" />
+        <property name="queryString">
+            <value><![CDATA[
+            select al from ApplicationLog al
+            where al.status not in ('CANCELLED', 'CLOSED')
+            and al.recoverable = 'Y' and al.referenceId = :referenceId
+            ]]></value>
+        </property>
+        <property name="parameterValues">
+            <map>
+                <entry key="referenceId" value="#{new Integer(jobParameters[batchId] ?: '0')}" />
+            </map>
+        </property>
+    </bean>-->
+
+    <bean id="rerunItemWriter" class="app.batch.writer.RerunItemWriter">
+        <constructor-arg ref="writer" />
+        <constructor-arg value="app.model.Person" />
+    </bean>
+
+    <bean id="rerunValidator" class="app.batch.validator.RerunJobParametersValidator" />
+
+    <!-- misc -->
+
+    <bean id="incrementer" class="org.springframework.batch.core.launch.support.RunIdIncrementer" />
+    <bean id="alwaysSkipItemSkipPolicy" class="org.springframework.batch.core.step.skip.AlwaysSkipItemSkipPolicy" />
+
+    <!-- person -->
+
+    <bean id="reader" class="app.batch.reader.PersonReader" />
+    <bean id="processor" class="app.batch.processor.PersonProcessor" />
+    <bean id="writer" class="app.batch.writer.PersonWriter" />
+
+    <bean id="cleanupSql" class="java.lang.String">
+        <constructor-arg>
+            <value><![CDATA[
+            delete from hibernate_sequences;
+            delete from application_log;
+            delete from batch_execution;
+            delete from person;
+            delete from nationality where code = 'Singapore';
+            ]]></value>
+        </constructor-arg>
+    </bean>
+
+</beans>

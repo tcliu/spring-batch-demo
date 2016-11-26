@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 /**
@@ -41,6 +42,11 @@ public class EntityService<T extends CrudEntity<ID>,ID extends Serializable> {
         return create(Arrays.asList(entities));
     }
 
+    @Transactional(rollbackFor = Throwable.class)
+    public <S extends T> List<S> create(Stream<S> entities) {
+        return update(entities.collect(Collectors.toList()));
+    }
+
     @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Throwable.class)
     public <S extends T> List<S> create(Iterable<S> entities) {
         List<S> created = null;
@@ -62,12 +68,17 @@ public class EntityService<T extends CrudEntity<ID>,ID extends Serializable> {
         return created;
     }
 
-    @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Throwable.class)
+    @Transactional(rollbackFor = Throwable.class)
     public List<T> update(T... entities) {
         return update(Arrays.asList(entities));
     }
 
-    @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Throwable.class)
+    @Transactional(rollbackFor = Throwable.class)
+    public <S extends T> List<S> update(Stream<S> entities) {
+        return update(entities.collect(Collectors.toList()));
+    }
+
+    @Transactional(rollbackFor = Throwable.class)
     public <S extends T> List<S> update(Iterable<S> entities) {
         List<S> updated = null;
         if (entities != null) {
@@ -84,12 +95,17 @@ public class EntityService<T extends CrudEntity<ID>,ID extends Serializable> {
         return updated;
     }
 
-    @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Throwable.class)
+    @Transactional(rollbackFor = Throwable.class)
     public List<T> save(T... entities) {
         return save(Arrays.asList(entities));
     }
 
-    @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Throwable.class)
+    @Transactional(rollbackFor = Throwable.class)
+    public <S extends T> List<S> save(Stream<S> entities) {
+        return update(entities.collect(Collectors.toList()));
+    }
+
+    @Transactional(rollbackFor = Throwable.class)
     public <S extends T> List<S> save(Iterable<S> entities) {
         Map<Boolean,List<S>> m = StreamSupport.stream(entities.spliterator(), false).collect(Collectors.partitioningBy(e -> e.getId() == null));
         List<S> l = new ArrayList<>();
@@ -98,7 +114,7 @@ public class EntityService<T extends CrudEntity<ID>,ID extends Serializable> {
         return l;
     }
 
-    @Transactional(propagation = Propagation.REQUIRED, rollbackFor = Throwable.class)
+    @Transactional(rollbackFor = Throwable.class)
     public void deleteAll() {
         getJpaRepository().deleteAll();
     }

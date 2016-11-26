@@ -28,7 +28,6 @@ public class ApplicationLogService extends EntityService<ApplicationLog,Integer>
         log.setContent(getContent(o));
         log.setRecoverable(isRecoverable(log.getMessage(), e) ? "Y" : "N");
         log.setStatus("OPEN");
-        log.beforeSave();
         return log;
     }
 

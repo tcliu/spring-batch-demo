@@ -21,6 +21,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Created by Liu on 10/14/2016.
@@ -75,10 +76,9 @@ public class BatchListener {
     private void resetApplicationLogs(JobExecution jobExecution) {
         BatchExecution batchExecution = getBatchExecution(jobExecution);
         if (batchExecution != null) {
-            List<ApplicationLog> appLogs = applicationLogService.getApplicationLogRepository().findByReferenceIdAndStatus(batchExecution.getId(), "OPEN");
+            Stream<ApplicationLog> appLogs = applicationLogService.getApplicationLogRepository().findByReferenceIdAndStatus(batchExecution.getId(), "OPEN");
             appLogs.forEach(appLog -> {
                 appLog.setStatus("CANCELLED");
-                appLog.beforeSave();
             });
             applicationLogService.update(appLogs);
         }
@@ -119,7 +119,6 @@ public class BatchListener {
         batchExecution.setSuccessCount(jobExecution.getExecutionContext().getInt("success"));
         boolean success = batchExecution.getTotalCount() == batchExecution.getSuccessCount();
         batchExecution.setStatus(success ? "COMPLETED" : "FAILED");
-        batchExecution.beforeSave();
     }
 
     @BeforeStep

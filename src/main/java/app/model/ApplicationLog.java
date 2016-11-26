@@ -2,6 +2,7 @@ package app.model;
 
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import javax.persistence.*;
 import java.time.LocalDateTime;
@@ -11,6 +12,7 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Table(name = "application_log")
+@EntityListeners(AuditingEntityListener.class)
 public class ApplicationLog implements CrudEntity<Integer> {
 
     @Id
@@ -39,6 +41,7 @@ public class ApplicationLog implements CrudEntity<Integer> {
     @Column(name = "recoverable", length = 1, columnDefinition = "CHAR(1)")
     private String recoverable;
 
+    @Version
     @Column(name = "update_count", columnDefinition = "INTEGER")
     private Integer updateCount;
 
@@ -53,12 +56,15 @@ public class ApplicationLog implements CrudEntity<Integer> {
     @Column(name = "last_updated", columnDefinition = "TIMESTAMP")
     private LocalDateTime lastUpdated;
 
-    public void beforeSave() {
-        if (getCreated() == null) {
-            setCreated(LocalDateTime.now());
-        }
+    @PrePersist
+    public void onPrePersist() {
+        setCreated(LocalDateTime.now());
         setLastUpdated(LocalDateTime.now());
-        updateCount = 1 + (updateCount == null ? 0 : updateCount);
+    }
+
+    @PreUpdate
+    public void onPreUpdate() {
+        setLastUpdated(LocalDateTime.now());
     }
 
     @Override

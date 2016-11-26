@@ -2,6 +2,7 @@ package app.model;
 
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import javax.persistence.*;
 import java.time.LocalDateTime;
@@ -11,6 +12,7 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Table(name = "batch_execution")
+@EntityListeners(AuditingEntityListener.class)
 public class BatchExecution implements CrudEntity<Integer> {
 
     @Id
@@ -41,10 +43,14 @@ public class BatchExecution implements CrudEntity<Integer> {
     @Column(name = "last_updated", columnDefinition = "TIMESTAMP")
     private LocalDateTime lastUpdated;
 
-    public void beforeSave() {
-        if (getCreated() == null) {
-            setCreated(LocalDateTime.now());
-        }
+    @PrePersist
+    public void onPrePersist() {
+        setCreated(LocalDateTime.now());
+        setLastUpdated(LocalDateTime.now());
+    }
+
+    @PreUpdate
+    public void onPreUpdate() {
         setLastUpdated(LocalDateTime.now());
         count = 1 + (count == null ? 0 : count);
     }

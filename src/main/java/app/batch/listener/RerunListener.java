@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.ExitStatus;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.StepExecution;
+import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.annotation.*;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,9 +25,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  * Created by Liu on 10/15/2016.
  */
 @Component
-public class RerunListener {
+public class RerunListener implements StepExecutionListener {
 
-    private Logger logger = LoggerFactory.getLogger(RerunListener.class);
+    private final Logger logger = LoggerFactory.getLogger(RerunListener.class);
 
     @Autowired
     private ApplicationLogService applicationLogService;
@@ -81,7 +82,6 @@ public class RerunListener {
         batchExecution.setSuccessCount(batchExecution.getSuccessCount() + jobExecution.getExecutionContext().getInt("success"));
         boolean success = batchExecution.getTotalCount() == batchExecution.getSuccessCount();
         batchExecution.setStatus(success ? "COMPLETED" : "FAILED");
-        batchExecution.beforeSave();
     }
 
     @BeforeStep
@@ -90,8 +90,9 @@ public class RerunListener {
     }
 
     @AfterStep
-    public void afterStep(StepExecution stepExecution) {
+    public ExitStatus afterStep(StepExecution stepExecution) {
         logger.info("afterStep {}", stepExecution);
+        return new ExitStatus("custom");
     }
 
     @BeforeChunk
@@ -140,7 +141,6 @@ public class RerunListener {
 
         items.forEach(item -> {
             item.setStatus("CLOSED");
-            item.beforeSave();
         });
         applicationLogService.update(items);
     }
@@ -150,7 +150,6 @@ public class RerunListener {
         logger.info("onSkipInWrite {} {}", item, t.getMessage());
         jobErrors.add(Pair.of(item, t));
 
-        item.beforeSave();
         applicationLogService.update(item);
     }
 

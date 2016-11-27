@@ -10,12 +10,12 @@ import org.springframework.jdbc.support.rowset.SqlRowSet;
 public class NodeRowMapper implements StructuredItemRowMapper<Node> {
 
     @Override
-    public boolean isNewItem(final Node item, final SqlRowSet rs) {
+    public boolean isNewItem(final Node item, final SqlRowSet rs, final int recordIndex) {
         return item.getId() != rs.getInt("ID1");
     }
 
     @Override
-    public Node newItem(final SqlRowSet rs) {
+    public Node newItem(final SqlRowSet rs, final int recordIndex) {
         Node node = new Node();
         node.setId(rs.getInt("ID1"));
         node.setName(rs.getString("NAME1"));
@@ -26,7 +26,7 @@ public class NodeRowMapper implements StructuredItemRowMapper<Node> {
     }
 
     @Override
-    public void updateItem(Node item, SqlRowSet rs) {
+    public void updateItem(Node item, SqlRowSet rs, final int recordIndex) {
         String id2 = rs.getString("ID2");
         if (id2 != null) {
             Node childNode = new Node();

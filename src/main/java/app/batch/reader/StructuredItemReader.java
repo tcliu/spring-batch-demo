@@ -56,14 +56,15 @@ public class StructuredItemReader<T> extends AbstractItemCountingItemStreamItemR
 
     @Override
     protected T doRead() throws Exception {
+        final int recordIndex = getCurrentItemCount();
         while (doRead && hasNext) {
-            if (curItem != null && rowMapper.isNewItem(curItem, sqlRowSet)) {
+            if (curItem != null && rowMapper.isNewItem(curItem, sqlRowSet, recordIndex)) {
                 doRead = false;
             } else {
                 if (curItem == null) {
-                    curItem = rowMapper.newItem(sqlRowSet);
+                    curItem = rowMapper.newItem(sqlRowSet, recordIndex);
                 }
-                rowMapper.updateItem(curItem, sqlRowSet);
+                rowMapper.updateItem(curItem, sqlRowSet, recordIndex);
                 hasNext = sqlRowSet.next();
             }
         }

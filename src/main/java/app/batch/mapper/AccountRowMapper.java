@@ -12,12 +12,12 @@ import org.springframework.jdbc.support.rowset.SqlRowSet;
 public class AccountRowMapper implements StructuredItemRowMapper<Account> {
 
     @Override
-    public boolean isNewItem(final Account item, final SqlRowSet rs) {
+    public boolean isNewItem(final Account item, final SqlRowSet rs, final int recordIndex) {
         return item.getId() != rs.getInt("ACCOUNT_ID");
     }
 
     @Override
-    public Account newItem(final SqlRowSet rs) {
+    public Account newItem(final SqlRowSet rs, final int recordIndex) {
         Account account = new Account();
         account.setId(rs.getInt("ACCOUNT_ID"));
         account.setName(rs.getString("ACCOUNT_NAME"));
@@ -28,7 +28,7 @@ public class AccountRowMapper implements StructuredItemRowMapper<Account> {
     }
 
     @Override
-    public void updateItem(final Account item, final SqlRowSet rs) {
+    public void updateItem(final Account item, final SqlRowSet rs, final int recordIndex) {
         String accountHolderId = rs.getString("ACCOUNT_HOLDER_ID");
         if (accountHolderId != null) {
             AccountHolder accountHolder = new AccountHolder();

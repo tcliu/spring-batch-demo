@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:batch="http://www.springframework.org/schema/batch"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/batch http://www.springframework.org/schema/batch/spring-batch-2.2.xsd">
+
+    <batch:job id="nodeJob" incrementer="incrementer">
+        <batch:step id="nodeMainStep">
+            <batch:tasklet>
+                <batch:chunk reader="nodeReader" processor="nodeProcessor" writer="nodeWriter" skip-policy="alwaysSkipItemSkipPolicy"
+                             commit-interval="10" retry-limit="3">
+                    <batch:retryable-exception-classes>
+                        <batch:include class="app.exception.RetryableException" />
+                        <batch:include class="org.springframework.dao.DeadlockLoserDataAccessException" />
+                    </batch:retryable-exception-classes>
+                </batch:chunk>
+            </batch:tasklet>
+            <batch:listeners>
+                <batch:listener ref="batchListener" />
+            </batch:listeners>
+        </batch:step>
+        <batch:listeners>
+            <batch:listener ref="batchListener" />
+        </batch:listeners>
+    </batch:job>
+
+    <bean id="nodeReader" class="app.batch.reader.StructuredItemReader">
+        <property name="rowMapper" ref="nodeRowMapper" />
+        <property name="dataSource" ref="dataSource" />
+        <property name="sql">
+            <value><![CDATA[
+            select n1.id id1, n1.name name1, n1.type type1, n1.value value1, n2.id id2, n2.name name2, n2.type type2, n2.value value2
+            from node n1
+            left join node n2 on n1.id = n2.parent_id
+            where n1.type = 'P'
+            order by n1.id, n2.id
+            ]]></value>
+        </property>
+    </bean>
+
+    <bean id="nodeProcessor" class="org.springframework.batch.item.support.PassThroughItemProcessor" />
+
+    <bean id="nodeWriter" class="app.batch.writer.NodeWriter" />
+
+    <bean id="nodeRowMapper" class="app.batch.mapper.NodeRowMapper" />
+
+</beans>

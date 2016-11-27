@@ -1,12 +1,5 @@
 package app.service;
 
-import app.exception.ApplicationException;
-import app.model.CrudEntity;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
-
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
 import java.io.Serializable;
@@ -17,6 +10,12 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
+import app.exception.ApplicationException;
+import app.model.CrudEntity;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Created by Liu on 10/15/2016.
@@ -56,14 +55,7 @@ public class EntityService<T extends CrudEntity<ID>,ID extends Serializable> {
                     throw new ApplicationException("ID should not be provided on create.");
                 }
             });
-            try {
-                created = jpaRepository.save(entities);
-                // reset id to null
-                entityManager.flush();
-            } catch (RuntimeException e) {
-                entities.forEach(entity -> entity.setId(null));
-                throw e;
-            }
+            created = jpaRepository.save(entities);
         }
         return created;
     }
@@ -90,7 +82,6 @@ public class EntityService<T extends CrudEntity<ID>,ID extends Serializable> {
                 }
             });
             updated = jpaRepository.save(entities);
-            entityManager.flush();
         }
         return updated;
     }

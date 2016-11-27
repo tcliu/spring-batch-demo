@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:batch="http://www.springframework.org/schema/batch"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/batch http://www.springframework.org/schema/batch/spring-batch-2.2.xsd">
+
+    <batch:job id="accountJob" incrementer="incrementer">
+        <batch:step id="accountMainStep">
+            <batch:tasklet>
+                <batch:chunk reader="accountReader" processor="accountProcessor" writer="accountWriter" skip-policy="alwaysSkipItemSkipPolicy"
+                             commit-interval="10" retry-limit="3">
+                    <batch:retryable-exception-classes>
+                        <batch:include class="app.exception.RetryableException" />
+                        <batch:include class="org.springframework.dao.DeadlockLoserDataAccessException" />
+                    </batch:retryable-exception-classes>
+                </batch:chunk>
+            </batch:tasklet>
+            <batch:listeners>
+                <batch:listener ref="batchListener" />
+            </batch:listeners>
+        </batch:step>
+        <batch:listeners>
+            <batch:listener ref="batchListener" />
+        </batch:listeners>
+    </batch:job>
+
+    <bean id="accountReader" class="app.batch.reader.StructuredItemReader">
+        <property name="rowMapper" ref="accountRowMapper" />
+        <property name="dataSource" ref="dataSource" />
+        <property name="sql">
+            <value><![CDATA[
+            select a.id account_id, a.name account_name, a.type account_type,
+              ah.id account_holder_id, ah.name account_holder_name,
+              p.id position_id, p.instrument_id, p.quantity, p.price
+            from account a
+            left join account_holder ah on a.id = ah.account_id
+            left join position p on a.id = p.account_id
+            order by a.id, ah.id, p.id
+            ]]></value>
+        </property>
+    </bean>
+
+    <bean id="accountProcessor" class="org.springframework.batch.item.support.PassThroughItemProcessor" />
+
+    <bean id="accountWriter" class="app.batch.writer.AccountWriter" />
+
+    <bean id="accountRowMapper" class="app.batch.mapper.AccountRowMapper" />
+
+</beans>

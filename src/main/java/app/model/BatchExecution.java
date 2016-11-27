@@ -1,11 +1,10 @@
 package app.model;
 
+import javax.persistence.*;
+import java.time.LocalDateTime;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
-
-import javax.persistence.*;
-import java.time.LocalDateTime;
 
 /**
  * Created by Liu on 10/15/2016.
@@ -47,6 +46,7 @@ public class BatchExecution implements CrudEntity<Integer> {
     public void onPrePersist() {
         setCreated(LocalDateTime.now());
         setLastUpdated(LocalDateTime.now());
+        count = 1 + (count == null ? 0 : count);
     }
 
     @PreUpdate

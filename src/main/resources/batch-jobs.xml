@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<beans xmlns="http://www.springframework.org/schema/beans"
-       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-       xmlns:batch="http://www.springframework.org/schema/batch"
-       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
-
+    <beans xmlns="http://www.springframework.org/schema/beans"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:batch="http://www.springframework.org/schema/batch"
+           xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
     http://www.springframework.org/schema/batch http://www.springframework.org/schema/batch/spring-batch-2.2.xsd">
 
+    <import resource="classpath:/batch/account-job.xml" />
+    <import resource="classpath:/batch/node-job.xml" />
+
     <batch:job id="mainJob" incrementer="incrementer">
-        <batch:step id="cleanupStep">
+        <!--<batch:step id="cleanupStep">
             <batch:tasklet ref="cleanupTask" />
             <batch:next on="*" to="mainStep" />
-        </batch:step>
+        </batch:step>-->
         <batch:step id="mainStep">
             <batch:tasklet>
                 <batch:chunk reader="reader" processor="processor" writer="writer" skip-policy="alwaysSkipItemSkipPolicy"

@@ -1,5 +1,7 @@
 package app;
 
+import java.util.Arrays;
+import java.util.Date;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.*;
@@ -7,9 +9,6 @@ import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
-
-import java.util.Arrays;
-import java.util.Date;
 
 @SpringBootApplication(scanBasePackages = "app")
 public class BatchApplication {
@@ -41,6 +40,10 @@ public class BatchApplication {
     }
 
     private static String getJobId(JobParameters jobParameters) {
+        String jobId = jobParameters.getString("jobId");
+        if (jobId != null) {
+            return jobId;
+        }
         return "Y".equalsIgnoreCase(jobParameters.getString("rerun")) ? "rerunJob" : "mainJob";
     }
 

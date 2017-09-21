@@ -32,6 +32,7 @@ lazy val runtimeDependencies = Seq(
   "org.springframework.boot" % "spring-boot-starter-data-jpa" % "1.4.2.RELEASE",
   "org.springframework.boot" % "spring-boot-starter-log4j2" % "1.4.2.RELEASE",
   "com.fasterxml.jackson.datatype" % "jackson-datatype-jsr310" % "2.6.1",
+  "io.reactivex.rxjava2" % "rxjava" % "2.1.3",
 
   "org.apache.commons" % "commons-lang3" % "3.4",
   "com.h2database" % "h2" % "1.4.193"
@@ -49,6 +50,6 @@ lazy val root = (project in file(""))
   .configure(initProject)
   .settings(
     version := "1.0.0",
-    scalaVersion := "2.11.8",
+    scalaVersion := "2.12.0",
     libraryDependencies ++= (runtimeDependencies ++ testDependencies)
   )

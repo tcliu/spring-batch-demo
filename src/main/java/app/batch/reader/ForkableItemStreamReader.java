@@ -89,7 +89,7 @@ public class ForkableItemStreamReader<K,T> extends AbstractItemCountingItemStrea
 
     @Override
     protected void doClose() throws Exception {
-
+        // do nothing
     }
 
     private void process() {
@@ -123,7 +123,7 @@ public class ForkableItemStreamReader<K,T> extends AbstractItemCountingItemStrea
                     }
                     itemBuffer.add(o);
                     if (itemBuffer.size() == batchSize) {
-                        processItemBuffer(itemBuffer, executionContext);
+                        processItemBuffer(itemBuffer);
                         if (parent == null) {
                             itemPool.clear();
                         }
@@ -131,10 +131,8 @@ public class ForkableItemStreamReader<K,T> extends AbstractItemCountingItemStrea
                 }
             } while (o != null);
             if (!itemBuffer.isEmpty()) {
-                processItemBuffer(itemBuffer, executionContext);
-                if (parent == null) {
-                    itemPool.clear();
-                }
+                // process remaining items
+                processItemBuffer(itemBuffer);
             }
         } catch (final Exception e) {
             LOGGER.error("{}", e);
@@ -147,7 +145,7 @@ public class ForkableItemStreamReader<K,T> extends AbstractItemCountingItemStrea
         }
     }
 
-    public void processItemBuffer(final Collection<T> buffer, final ExecutionContext executionContext) {
+    private void processItemBuffer(final Collection<T> buffer) {
         if (slaveReaderProviders != null) {
             final List<CompletableFuture<Void>> cfs = slaveReaderProviders.stream().map(provider -> {
                 final ItemStreamReader<T> slaveReader = provider.apply(buffer);

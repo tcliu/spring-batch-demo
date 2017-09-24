@@ -20,15 +20,15 @@ import org.springframework.batch.item.UnexpectedInputException;
 /**
  * Created by Liu on 9/21/2017.
  */
-public class NestedItemStreamReaderTest {
+public class ForkableItemStreamReaderTest {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(NestedItemStreamReaderTest.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ForkableItemStreamReaderTest.class);
 
     @Test
     public void test() {
         ExecutionContext executionContext = new ExecutionContext();
 
-        NestedItemStreamReader<Integer,Map<String,Object>> reader = new NestedItemStreamReader<>();
+        ForkableItemStreamReader<Integer,Map<String,Object>> reader = new ForkableItemStreamReader<>();
 
         ItemStreamReader<Map<String,Object>> delegate = new CompositeItemStreamReader<>(
             createDelegateReader("name", null, 1, 100),
@@ -61,7 +61,7 @@ public class NestedItemStreamReaderTest {
     }
 
     private ItemStreamReader<Map<String,Object>> getSlaveItemStreamReader(String field, Collection<Map<String,Object>> items) {
-        NestedItemStreamReader<Object,Map<String,Object>> reader = new NestedItemStreamReader<>();
+        ForkableItemStreamReader<Object,Map<String,Object>> reader = new ForkableItemStreamReader<>();
         if ("xxx".equals(field)) {
             items = items.stream().filter(m -> ((Integer) m.get("id")) % 3 == 0).collect(Collectors.toSet());
         } else if ("uuu".equals(field)) {

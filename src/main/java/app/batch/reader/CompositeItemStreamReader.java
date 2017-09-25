@@ -1,6 +1,5 @@
 package app.batch.reader;
 
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -16,7 +15,7 @@ import org.springframework.batch.item.UnexpectedInputException;
  */
 public class CompositeItemStreamReader<T> implements ItemStreamReader<T> {
 
-    private final Collection<ItemStreamReader<T>> itemStreamReaders;
+    private final Iterable<ItemStreamReader<T>> itemStreamReaders;
 
     private Iterator<ItemStreamReader<T>> readerItr;
 
@@ -26,7 +25,7 @@ public class CompositeItemStreamReader<T> implements ItemStreamReader<T> {
         this.itemStreamReaders = Stream.of(itemStreamReaders).collect(Collectors.toList());
     }
 
-    public CompositeItemStreamReader(final Collection<ItemStreamReader<T>> itemStreamReaders) {
+    public CompositeItemStreamReader(final Iterable<ItemStreamReader<T>> itemStreamReaders) {
         this.itemStreamReaders = itemStreamReaders;
     }
 

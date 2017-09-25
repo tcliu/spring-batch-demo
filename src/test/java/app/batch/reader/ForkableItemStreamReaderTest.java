@@ -40,7 +40,6 @@ public class ForkableItemStreamReaderTest {
         reader.addSlaveReaderProvider(items -> getSlaveItemStreamReader("code1", items));
         reader.addSlaveReaderProvider(items -> getSlaveItemStreamReader("code2", items));
         reader.setKeyFunction(m -> (Integer) m.get("id"));
-        reader.setBatchSize(10);
         reader.setMergeFunction((a, b) -> {
             a.putAll(b);
            return a;
@@ -91,9 +90,7 @@ public class ForkableItemStreamReaderTest {
 
             @Override
             public void open(final ExecutionContext executionContext) throws ItemStreamException {
-                if (items != null) {
-                    LOGGER.info("Open for {}", items);
-                }
+
             }
 
             @Override
@@ -106,14 +103,11 @@ public class ForkableItemStreamReaderTest {
                 if (!queue.isEmpty()) {
                     throw new ItemStreamException(String.format("Not all items read. queue = %s", queue));
                 }
-                if (items != null) {
-                    LOGGER.info("Close for {}", items);
-                }
             }
 
             @Override
             public Map<String, Object> read() throws Exception, UnexpectedInputException, ParseException, NonTransientResourceException {
-                //Thread.sleep(100);
+                Thread.sleep(10);
                 return queue == null || queue.isEmpty() ? null : read(queue.poll());
             }
 

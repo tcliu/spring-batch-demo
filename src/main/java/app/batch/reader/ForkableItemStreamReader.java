@@ -27,14 +27,14 @@ import org.springframework.batch.item.support.AbstractItemCountingItemStreamItem
 /**
  * Created by Liu on 9/21/2017.
  */
-public class ForkableItemStreamReader<K,T> extends AbstractItemCountingItemStreamItemReader<T> {
+public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStreamItemReader<T> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ForkableItemStreamReader.class);
 
     // poison object for terminating the read queue
     private static final Object DONE = new Object();
 
-    private ForkableItemStreamReader<K,T> parent;
+    private ForkableItemStreamReader<T,K> parent;
 
     private ItemStreamReader<T> delegate;
 
@@ -170,11 +170,11 @@ public class ForkableItemStreamReader<K,T> extends AbstractItemCountingItemStrea
         buffer.clear();
         final CompletableFuture<Collection<T>> f = async(() -> {
             if (slaveReaderProviders != null) {
-                final List<CompletableFuture<Void>> cfs = slaveReaderProviders.stream().map(provider -> {
+                final Collection<CompletableFuture<Void>> cfs = slaveReaderProviders.stream().map(provider -> {
                     final ItemStreamReader<T> slaveReader = provider.apply(processed);
-                    final ForkableItemStreamReader<K, T> forkableSlaveReader;
+                    final ForkableItemStreamReader<T,K> forkableSlaveReader;
                     if (slaveReader instanceof ForkableItemStreamReader) {
-                        forkableSlaveReader = (ForkableItemStreamReader<K, T>) slaveReader;
+                        forkableSlaveReader = (ForkableItemStreamReader<T,K>) slaveReader;
                     } else {
                         forkableSlaveReader = new ForkableItemStreamReader<>(delegate);
                         forkableSlaveReader.keyFunction = keyFunction;

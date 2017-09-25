@@ -28,7 +28,7 @@ public class ForkableItemStreamReaderTest {
     public void test() {
         ExecutionContext executionContext = new ExecutionContext();
 
-        ForkableItemStreamReader<Integer,Map<String,Object>> reader = new ForkableItemStreamReader<>();
+        ForkableItemStreamReader<Map<String,Object>,Integer> reader = new ForkableItemStreamReader<>();
 
         ItemStreamReader<Map<String,Object>> delegate = new CompositeItemStreamReader<>(
             createDelegateReader("name", null, 1, 100),
@@ -60,7 +60,7 @@ public class ForkableItemStreamReaderTest {
     }
 
     private ItemStreamReader<Map<String,Object>> getSlaveItemStreamReader(String field, Collection<Map<String,Object>> items) {
-        ForkableItemStreamReader<Object,Map<String,Object>> reader = new ForkableItemStreamReader<>();
+        ForkableItemStreamReader<Map<String,Object>,Object> reader = new ForkableItemStreamReader<>();
         if ("xxx".equals(field)) {
             items = items.stream().filter(m -> ((Integer) m.get("id")) % 3 == 0).collect(Collectors.toSet());
         } else if ("uuu".equals(field)) {

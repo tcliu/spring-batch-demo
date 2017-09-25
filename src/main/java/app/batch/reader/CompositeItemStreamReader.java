@@ -1,19 +1,16 @@
 package app.batch.reader;
 
+import java.util.Arrays;
 import java.util.Iterator;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import org.springframework.batch.item.ExecutionContext;
 import org.springframework.batch.item.ItemStreamException;
 import org.springframework.batch.item.ItemStreamReader;
-import org.springframework.batch.item.NonTransientResourceException;
-import org.springframework.batch.item.ParseException;
-import org.springframework.batch.item.UnexpectedInputException;
+import org.springframework.batch.item.support.AbstractItemCountingItemStreamItemReader;
 
 /**
  * Created by Liu on 9/24/2017.
  */
-public class CompositeItemStreamReader<T> implements ItemStreamReader<T> {
+public class CompositeItemStreamReader<T> extends AbstractItemCountingItemStreamItemReader<T> {
 
     private final Iterable<ItemStreamReader<T>> itemStreamReaders;
 
@@ -21,16 +18,25 @@ public class CompositeItemStreamReader<T> implements ItemStreamReader<T> {
 
     private ItemStreamReader<T> curReader;
 
+    private ExecutionContext executionContext;
+
     public CompositeItemStreamReader(final ItemStreamReader<T>... itemStreamReaders) {
-        this.itemStreamReaders = Stream.of(itemStreamReaders).collect(Collectors.toList());
+        this(Arrays.asList(itemStreamReaders));
     }
 
     public CompositeItemStreamReader(final Iterable<ItemStreamReader<T>> itemStreamReaders) {
         this.itemStreamReaders = itemStreamReaders;
+        setExecutionContextName("executionContext_" + toString());
     }
 
     @Override
-    public T read() throws Exception, UnexpectedInputException, ParseException, NonTransientResourceException {
+    public void open(final ExecutionContext executionContext) throws ItemStreamException {
+        super.open(executionContext);
+        this.executionContext = executionContext;
+    }
+
+    @Override
+    protected T doRead() throws Exception {
         T o = null;
         if (itemStreamReaders != null) {
             if (readerItr == null) {
@@ -52,17 +58,13 @@ public class CompositeItemStreamReader<T> implements ItemStreamReader<T> {
     }
 
     @Override
-    public void open(final ExecutionContext executionContext) throws ItemStreamException {
+    protected void doOpen() throws Exception {
         itemStreamReaders.forEach(reader -> reader.open(executionContext));
     }
 
     @Override
-    public void update(final ExecutionContext executionContext) throws ItemStreamException {
-        itemStreamReaders.forEach(reader -> reader.update(executionContext));
-    }
-
-    @Override
-    public void close() throws ItemStreamException {
+    protected void doClose() throws Exception {
         itemStreamReaders.forEach(ItemStreamReader::close);
     }
+
 }

@@ -13,6 +13,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.function.BiFunction;
+import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -41,6 +42,10 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
 
     private BiFunction<T,T,T> mergeFunction;
 
+    private BiFunction<T, ExecutionContext, Collection<T>> mapper;
+
+    private BiPredicate<T, ExecutionContext> filter;
+
     private Collection<Function<Collection<T>, ItemStreamReader<T>>> slaveReaderProviders;
 
     private BlockingQueue<Object> readQueue;
@@ -55,7 +60,7 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
 
     private ExecutorService executor;
 
-    private boolean ownedExecutor;
+    private boolean hasOwnExecutor;
 
     private int batchSize = 20;     // default batch size
 
@@ -115,7 +120,7 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
 
     @Override
     protected void doOpen() throws Exception {
-        ownedExecutor = executor == null;
+        hasOwnExecutor = executor == null;
         if (executor == null) {
             executor = Executors.newCachedThreadPool();
         }
@@ -150,9 +155,13 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
                 // read another record
                 o = delegate.read();
             }
-            if (o != null) {
-                itemBuffer.add(o);
-                if (itemBuffer.size() == batchSize) {
+            if (o != null && (filter == null || filter.test(o, executionContext))) {
+                if (mapper == null) {
+                    itemBuffer.add(o);
+                } else {
+                    itemBuffer.addAll(mapper.apply(o, executionContext));
+                }
+                if (itemBuffer.size() >= batchSize) {
                     batchQueue.put(processItemBuffer(++batchIndex, itemBuffer, false));
                 }
             }
@@ -195,7 +204,7 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
         if (parent == null) {
             itemPool.clear();
         }
-        if (ownedExecutor) {
+        if (hasOwnExecutor) {
             executor.shutdown();
         }
         readQueue.add(DONE);
@@ -228,11 +237,12 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
     }
 
     private CompletableFuture<Collection<T>> processItemBuffer(int batchIndex, final Collection<T> buffer, boolean isLast) {
-        final Collection<T> processed = buffer.stream().map(this::processItem).collect(Collectors.toList());
+        final Collection<T> bufferCopy = new ArrayList<>(buffer);
         final CompletableFuture<Collection<T>> f = async(() -> {
             if (parent == null) {
-                LOGGER.info("Processing batch {} (size = {}, queue size = {}) {}", batchIndex, processed.size(), batchQueue.size(), processed);
+                LOGGER.info("Processing batch {} (size = {}, queue size = {}) {}", batchIndex, bufferCopy.size(), batchQueue.size(), bufferCopy);
             }
+            final Collection<T> processed = bufferCopy.stream().map(this::processItem).collect(Collectors.toList());
             if (slaveReaderProviders != null) {
                 final Collection<CompletableFuture<Void>> cfs = slaveReaderProviders.stream().map(provider -> {
                     final ItemStreamReader<T> slaveReader = provider.apply(processed);
@@ -295,6 +305,14 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
 
     public void setMergeFunction(final BiFunction<T, T, T> mergeFunction) {
         this.mergeFunction = mergeFunction;
+    }
+
+    public void setMapper(final BiFunction<T, ExecutionContext, Collection<T>> mapper) {
+        this.mapper = mapper;
+    }
+
+    public void setFilter(final BiPredicate<T, ExecutionContext> filter) {
+        this.filter = filter;
     }
 
     public void setSlaveReaderProviders(final Collection<Function<Collection<T>, ItemStreamReader<T>>> slaveReaderProviders) {

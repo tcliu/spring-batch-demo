@@ -1,6 +1,8 @@
 package app.batch.reader;
 
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +49,16 @@ public class ForkableItemStreamReaderTest {
         reader.setMergeFunction((a, b) -> {
             a.putAll(b);
            return a;
+        });
+        reader.setFilter((item, ctx) -> (Integer) item.get("id") % 37 != 0);
+        reader.setMapper((item, ctx) -> {
+            final Collection<Map<String,Object>> c;
+            if ((Integer) item.get("id") == 38) {
+                c = Arrays.asList(item, item);
+            } else {
+                c = Collections.singletonList(item);
+            }
+            return c;
         });
 
         try {

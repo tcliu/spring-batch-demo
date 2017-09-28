@@ -1,12 +1,18 @@
 package app.batch.reader;
 
 import java.util.Collection;
-import java.util.Deque;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
+import org.apache.commons.lang3.StringUtils;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,14 +37,12 @@ public class ForkableItemStreamReaderTest {
         ForkableItemStreamReader<Map<String,Object>,Integer> reader = new ForkableItemStreamReader<>();
 
         ItemStreamReader<Map<String,Object>> delegate = new CompositeItemStreamReader<>(
-            createDelegateReader("name", null, 1, 100),
-            createDelegateReader("description", null, 101, 200)
+            createDelegateReader("name", f -> constructList(f, 1, 1000), null)
         );
 
         reader.setDelegate(delegate);
         reader.addSlaveReaderProvider(items -> getSlaveItemStreamReader("code", items));
-        reader.addSlaveReaderProvider(items -> getSlaveItemStreamReader("code1", items));
-        reader.addSlaveReaderProvider(items -> getSlaveItemStreamReader("code2", items));
+        reader.addSlaveReaderProvider(items -> getSlaveItemStreamReader("description", items));
         reader.setKeyFunction(m -> (Integer) m.get("id"));
         reader.setMergeFunction((a, b) -> {
             a.putAll(b);
@@ -61,36 +65,35 @@ public class ForkableItemStreamReaderTest {
 
     private ItemStreamReader<Map<String,Object>> getSlaveItemStreamReader(String field, Collection<Map<String,Object>> items) {
         ForkableItemStreamReader<Map<String,Object>,Object> reader = new ForkableItemStreamReader<>();
-        if ("xxx".equals(field)) {
-            items = items.stream().filter(m -> ((Integer) m.get("id")) % 3 == 0).collect(Collectors.toSet());
-        } else if ("uuu".equals(field)) {
-            items = items.stream().filter(m -> ((Integer) m.get("id")) % 9 == 0).collect(Collectors.toSet());
-        }
-        reader.setDelegate(createDelegateReader(field, items, 0, 0));
-        reader.setKeyFunction(m -> m.get("id"));
-        reader.setMergeFunction((a, b) -> {
-            a.putAll(b);
-            return a;
-        });
+        reader.setBatchSize(10);
+        int num = Optional.of(field.replaceAll("[^0-9]+", "")).filter(StringUtils::isNotBlank).map(Integer::valueOf).orElse(0);
+        final Collection<Map<String,Object>> filtered = num == 0 ? items :
+                items.stream().filter(m -> ((Integer) m.get("id")) % num == 0).collect(Collectors.toList());
+        reader.setDelegate(createDelegateReader(field, f -> filtered, o -> (Integer) o.get("id") == 999));
+
         if ("code".equals(field)) {
-            reader.addSlaveReaderProvider(items2 -> getSlaveItemStreamReader("xxx", items2));
-        } else if ("xxx".equals(field)) {
-            reader.addSlaveReaderProvider(items2 -> getSlaveItemStreamReader("uuu", items2));
+            Stream.of(2, 3, 5, 7).forEach(n -> {
+                reader.addSlaveReaderProvider(c -> getSlaveItemStreamReader("d" + n, c));
+            });
+        } else if (num == 3) {
+            Stream.of(11, 13).forEach(n -> {
+                reader.addSlaveReaderProvider(c -> getSlaveItemStreamReader("d" + n, c));
+            });
         }
 
         return reader;
     }
 
-
-    private ItemStreamReader<Map<String,Object>> createDelegateReader(final String field, Collection<Map<String,Object>> items, int lb, int ub) {
+    private ItemStreamReader<Map<String,Object>> createDelegateReader(final String field,
+                                                                      final Function<String,Collection<Map<String,Object>>> itemSupplier,
+                                                                      final Predicate<Map<String,Object>> errorFilter) {
         return new ItemStreamReader<Map<String, Object>>() {
 
-            Deque<Map<String,Object>> queue =
-                    new LinkedList<>(items == null ? IntStream.rangeClosed(lb, ub).mapToObj(this::read).collect(Collectors.toList()) : items);
+            Queue<Map<String,Object>> queue;
 
             @Override
             public void open(final ExecutionContext executionContext) throws ItemStreamException {
-
+                queue = new LinkedList<>(itemSupplier.apply(field));
             }
 
             @Override
@@ -107,27 +110,33 @@ public class ForkableItemStreamReaderTest {
 
             @Override
             public Map<String, Object> read() throws Exception, UnexpectedInputException, ParseException, NonTransientResourceException {
-                Thread.sleep(10);
                 return queue == null || queue.isEmpty() ? null : read(queue.poll());
             }
 
-            private Map<String,Object> read(int i) {
-                Map<String, Object> m = new ConcurrentHashMap<>();
-                m.put("id", i);
-                m.put(field, field.toUpperCase() + " " + i);
-                return m;
-            }
-
-            private Map<String, Object> read(Map<String,Object> o) {
+            private Map<String, Object> read(Map<String,Object> o) throws InterruptedException {
+                Thread.sleep(5L);
                 Map<String, Object> m = new ConcurrentHashMap<>();
                 m.put("id", o.get("id"));
-                m.put(field, field.toUpperCase() + " " + o.get("id"));
-                if (!"name".equals(field) && o.get("id").equals(10)) {
-                    throw new RuntimeException("Cannot read 10");
+                m.put(field, o.get("id"));
+                if (errorFilter != null && errorFilter.test(o)) {
+                    throw new RuntimeException("Cannot read " + o.get("id"));
                 }
                 return m;
             }
         };
     }
+
+
+    private Map<String,Object> construct(String field, int i) {
+        Map<String, Object> m = new ConcurrentHashMap<>();
+        m.put("id", i);
+        m.put(field, i);
+        return m;
+    }
+
+    private List<Map<String,Object>> constructList(String field, int lb, int ub) {
+        return IntStream.rangeClosed(lb, ub).mapToObj(n -> construct(field, n)).collect(Collectors.toList());
+    }
+
 
 }

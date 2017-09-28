@@ -41,14 +41,19 @@ public class CompositeItemStreamReaderTest {
 
     @Test
     public void singleReader() throws Exception {
-
+        final ExecutionContext executionContext = new ExecutionContext();
         final ItemStreamReader<Integer> r1 = createItemStreamReader(1, 5);
         final ItemStreamReader<Integer> r = new CompositeItemStreamReader<>(Collections.singletonList(r1));
 
         final List<Integer> result = new ArrayList<>();
-        Integer o;
-        while ((o = r.read()) != null) {
-            result.add(o);
+        try {
+            r.open(executionContext);
+            Integer o;
+            while ((o = r.read()) != null) {
+                result.add(o);
+            }
+        } finally {
+            r.close();
         }
         assertThat(result, contains(1, 2, 3, 4, 5));
 
@@ -56,15 +61,22 @@ public class CompositeItemStreamReaderTest {
 
     @Test
     public void multipleReaders() throws Exception {
+        final ExecutionContext executionContext = new ExecutionContext();
         final ItemStreamReader<Integer> r1 = createItemStreamReader(1, 5);
         final ItemStreamReader<Integer> r2 = createItemStreamReader(6, 5);
         final ItemStreamReader<Integer> r3 = createItemStreamReader(12, 17);
         final ItemStreamReader<Integer> r = new CompositeItemStreamReader<>(Arrays.asList(r1, r2, r3));
 
         final List<Integer> result = new ArrayList<>();
-        Integer o;
-        while ((o = r.read()) != null) {
-            result.add(o);
+        try {
+            r.open(executionContext);
+
+            Integer o;
+            while ((o = r.read()) != null) {
+                result.add(o);
+            }
+        } finally {
+            r.close();
         }
         assertThat(result, contains(1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17));
 

@@ -38,20 +38,12 @@ public class CompositeItemStreamReader<T> extends AbstractItemCountingItemStream
     @Override
     protected T doRead() throws Exception {
         T o = null;
-        if (itemStreamReaders != null) {
-            if (readerItr == null) {
-                readerItr = itemStreamReaders.iterator();
-                if (readerItr.hasNext()) {
-                    curReader = readerItr.next();
-                }
-            }
-            for (boolean done = false; curReader != null && !done; ) {
-                o = curReader.read();
-                if (o == null && readerItr.hasNext()) {
-                    curReader = readerItr.next();
-                } else {
-                    done = true;
-                }
+        for (boolean done = false; curReader != null && !done; ) {
+            o = curReader.read();
+            if (o == null && readerItr.hasNext()) {
+                curReader = readerItr.next();
+            } else {
+                done = true;
             }
         }
         return o;
@@ -60,6 +52,12 @@ public class CompositeItemStreamReader<T> extends AbstractItemCountingItemStream
     @Override
     protected void doOpen() throws Exception {
         itemStreamReaders.forEach(reader -> reader.open(executionContext));
+        if (readerItr == null) {
+            readerItr = itemStreamReaders.iterator();
+            if (readerItr.hasNext()) {
+                curReader = readerItr.next();
+            }
+        }
     }
 
     @Override

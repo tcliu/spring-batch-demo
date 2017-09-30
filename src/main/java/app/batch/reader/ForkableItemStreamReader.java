@@ -3,12 +3,11 @@ package app.batch.reader;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -27,44 +26,46 @@ import org.springframework.batch.item.support.AbstractItemCountingItemStreamItem
 /**
  * Created by Liu on 9/21/2017.
  */
-public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStreamItemReader<T> {
+public class ForkableItemStreamReader<T> extends AbstractItemCountingItemStreamItemReader<T> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ForkableItemStreamReader.class);
 
     // poison object for terminating the read queue
     private static final Object DONE = new Object();
 
-    private ForkableItemStreamReader<T,K> parent;
+    private ForkableItemStreamReader<T> parent;
 
     private ItemStreamReader<T> delegate;
 
-    private Function<T,K> keyFunction;
+    private Function<T, ?> keyFunction;
 
-    private BiFunction<T,T,T> mergeFunction;
+    private BiFunction<T, T, T> mergeFunction;
 
     private BiFunction<T, ExecutionContext, Collection<T>> mapper;
 
     private BiPredicate<T, ExecutionContext> filter;
 
-    private Collection<Function<Collection<T>, ItemStreamReader<T>>> slaveReaderProviders;
+    private Collection<Provider<T>> slaveReaderProviders;
 
     private BlockingQueue<Object> readQueue;
 
     private BlockingQueue<Object> batchQueue;
 
-    private CountDownLatch doneLatch;
-
-    private ConcurrentMap<K,T> itemPool;
+    private Map<Object, Map<Object, Collection<T>>> itemPool;
 
     private ExecutionContext executionContext;
 
     private ExecutorService executor;
 
+    private Exception readException;
+
     private boolean hasOwnExecutor;
 
-    private int batchSize = 20;     // default batch size
+    private int batchSize = 100;     // default batch size
 
     private int maxConcurrentBatchCount = 20;
+
+    private int readBufferSize = 1000;
 
     interface CheckedRunnable extends Runnable {
 
@@ -94,6 +95,58 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
         }
     }
 
+    static class Provider<T> implements Function<Collection<T>, ForkableItemStreamReader<T>> {
+
+        private Function<Collection<T>, ForkableItemStreamReader<T>> provider;
+
+        private Function<T, ?> keyFunction;
+
+        private BiFunction<T, T, T> mergeFunction;
+
+        public Provider(final Function<Collection<T>, ForkableItemStreamReader<T>> provider,
+                        final Function<T, ?> keyFunction,
+                        final BiFunction<T, T, T> mergeFunction) {
+            this.provider = provider;
+            this.keyFunction = keyFunction;
+            this.mergeFunction = mergeFunction;
+        }
+
+        public Function<Collection<T>, ForkableItemStreamReader<T>> getProvider() {
+            return provider;
+        }
+
+        public void setProvider(final Function<Collection<T>, ForkableItemStreamReader<T>> provider) {
+            this.provider = provider;
+        }
+
+        public Function<T, ?> getKeyFunction() {
+            return keyFunction;
+        }
+
+        public void setKeyFunction(final Function<T, ?> keyFunction) {
+            this.keyFunction = keyFunction;
+        }
+
+        public BiFunction<T, T, T> getMergeFunction() {
+            return mergeFunction;
+        }
+
+        public void setMergeFunction(final BiFunction<T, T, T> mergeFunction) {
+            this.mergeFunction = mergeFunction;
+        }
+
+        @Override
+        public ForkableItemStreamReader<T> apply(final Collection<T> c) {
+            Objects.requireNonNull(provider, "Item provider is not provided.");
+            Objects.requireNonNull(keyFunction, "Key function is not provided.");
+            Objects.requireNonNull(mergeFunction, "Merge function is provided.");
+            final ForkableItemStreamReader<T> reader = provider.apply(c);
+            reader.setKeyFunction(keyFunction);
+            reader.setMergeFunction(mergeFunction);
+            return reader;
+        }
+    }
+
     public ForkableItemStreamReader() {
         this(null);
     }
@@ -111,11 +164,17 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
 
     @Override
     protected T doRead() throws Exception {
+        T o;
         if (readQueue == null) {
             throw new IllegalStateException("Read queue has not been initialized.");
+        } else {
+            final Object t = readQueue.take();
+            if (readException != null) {
+                throw readException;
+            }
+            o = t == DONE ? null : (T) t;
         }
-        final Object t = readQueue.take();
-        return t == DONE ? null : (T) t;
+        return o;
     }
 
     @Override
@@ -124,15 +183,20 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
         if (executor == null) {
             executor = Executors.newCachedThreadPool();
         }
-        readQueue = new LinkedBlockingQueue<>();
+        readQueue = new LinkedBlockingQueue<>(readBufferSize);
         batchQueue = new LinkedBlockingQueue<>(maxConcurrentBatchCount);
-        doneLatch = new CountDownLatch(1);
         if (itemPool == null) {
             itemPool = new ConcurrentHashMap<>();
         }
         if (parent == null) {
             // async for root reader
-            async(this::process);
+            final CompletableFuture<?> f = async(this::process);
+            f.whenComplete((res, e) -> {
+                if (e != null) {
+                    readException = (Exception) e;
+                    cleanup();
+                }
+            });
         } else {
             process();
         }
@@ -172,12 +236,10 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
 
     private void consumeBatchQueue() throws InterruptedException {
         boolean done = false;
-        for (; !done ;) {
+        while (!done) {
             final Object o = batchQueue.take();
             done = o == null || o == DONE;
-            if (done) {
-                doneLatch.countDown();
-            } else {
+            if (!done) {
                 CompletableFuture<Collection<T>> cf = (CompletableFuture<Collection<T>>) o;
                 Collection<T> items = cf.join();
                 readQueue.addAll(items);
@@ -187,12 +249,10 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
 
     private void process() {
         Objects.requireNonNull(delegate, "Delegate item reader is not provided.");
-
         try {
             delegate.open(executionContext);
-            async(() -> readItems());
-            async(() -> consumeBatchQueue());
-            doneLatch.await();
+            async(this::readItems);
+            consumeBatchQueue();
         } catch (final Exception e) {
             LOGGER.error("Failed to process item reader.", e);
         } finally {
@@ -212,69 +272,103 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
         delegate.close();
     }
 
-    private T processItem(final T o) {
-        T item = o;
+    private void updateItemPool(final T o,
+                                final Function<T, ?> keyFunction,
+                                final BiFunction<T,T,T> mergeFunction,
+                                boolean insertOnly) {
         if (keyFunction != null) {
-            // update item pool
-            final K key = keyFunction.apply(o);
+            final Object key = keyFunction.apply(o);
             if (key != null) {
-                item = itemPool.compute(key, (k, v) -> {
-                    final T r;
-                    if (v == null) {
-                        r = o;
-                    } else if (mergeFunction == null) {
-                        r = v;
-                    } else {
-                        synchronized (v) {
-                            r = mergeFunction.apply(v, o);
+                // key - pool key, value - map of key and list of values
+                itemPool.compute(keyFunction, (pk, pv) -> {
+                    final Map<Object, Collection<T>> subPool = pv == null ? new ConcurrentHashMap<>() : pv;
+                    subPool.compute(key, (k, v) -> {
+                        final Collection<T> l = v == null ? ConcurrentHashMap.newKeySet() : v;
+                        if (insertOnly || l.isEmpty()) {
+                            l.add(o);
+                        } else if (mergeFunction != null) {
+                            l.forEach(u -> {
+                                synchronized (u) {
+                                    mergeFunction.apply(u, o);
+                                }
+                            });
                         }
-                    }
-                    return r;
+                        return l;
+                    });
+                    return subPool;
                 });
             }
         }
-        return item;
+
+    }
+
+    private void clearItemPool(final Collection<T> items,
+                                final Function<T, ?> keyFunction) {
+        itemPool.compute(keyFunction, (pk, pv) -> {
+            if (pv != null) {
+                items.forEach(o -> {
+                    Object key = keyFunction.apply(o);
+                    if (key != null) {
+                        pv.compute(key, (k, v) -> {
+                            if (v != null) {
+                                v.clear();
+                            }
+                            return v;
+                        });
+                        pv.remove(key);
+                    }
+                });
+            }
+            return pv;
+        });
     }
 
     private CompletableFuture<Collection<T>> processItemBuffer(int batchIndex, final Collection<T> buffer, boolean isLast) {
         final Collection<T> bufferCopy = new ArrayList<>(buffer);
         final CompletableFuture<Collection<T>> f = async(() -> {
+            final Collection<T> processed = bufferCopy.stream()
+                    .filter(o -> filter == null || filter.test(o, executionContext))
+                    .collect(Collectors.toList());
             if (parent == null) {
-                LOGGER.info("Processing batch {} (size = {}, queue size = {}) {}", batchIndex, bufferCopy.size(), batchQueue.size(), bufferCopy);
+                LOGGER.info("Processing batch {} (size = {}, queue size = {})", batchIndex, bufferCopy.size(), batchQueue.size());
             }
-            final Collection<T> processed = bufferCopy.stream().map(this::processItem).collect(Collectors.toList());
+            if (keyFunction != null) {
+                processed.forEach(o -> updateItemPool(o, keyFunction, mergeFunction, parent == null));
+            }
             if (slaveReaderProviders != null) {
+                slaveReaderProviders.stream()
+                    .forEach(provider -> {
+                        processed.forEach(o -> updateItemPool(o, provider.getKeyFunction(), provider.getMergeFunction(), parent == null));
+                    });
                 final Collection<CompletableFuture<Void>> cfs = slaveReaderProviders.stream().map(provider -> {
-                    final ItemStreamReader<T> slaveReader = provider.apply(processed);
-                    final ForkableItemStreamReader<T, K> forkableSlaveReader;
-                    if (slaveReader instanceof ForkableItemStreamReader) {
-                        forkableSlaveReader = (ForkableItemStreamReader<T, K>) slaveReader;
-                    } else {
-                        forkableSlaveReader = new ForkableItemStreamReader<>(delegate);
-                    }
-                    forkableSlaveReader.parent = this;
-                    forkableSlaveReader.itemPool = itemPool;
-                    forkableSlaveReader.executor = executor;
-                    if (forkableSlaveReader.keyFunction == null) {
-                        forkableSlaveReader.keyFunction = keyFunction;
-                    }
-                    if (forkableSlaveReader.mergeFunction == null) {
-                        forkableSlaveReader.mergeFunction = mergeFunction;
-                    }
-                    return async(() -> forkableSlaveReader.open(executionContext));
+                    final ForkableItemStreamReader<T> slaveReader = provider.apply(processed);
+                    slaveReader.parent = this;
+                    slaveReader.itemPool = itemPool;
+                    slaveReader.executor = executor;
+                    return async(() -> slaveReader.open(executionContext));
                 }).collect(Collectors.toList());
                 cfs.forEach(CompletableFuture::join);
+
+                if (parent == null) {
+                    slaveReaderProviders.stream()
+                        .filter(provider -> provider.getKeyFunction() != null)
+                        .map(Provider::getKeyFunction)
+                        .forEach(keyFunction -> clearItemPool(processed, keyFunction));
+                }
             }
             if (parent == null) {
-                if (keyFunction != null) {
-                    processed.stream().forEach(item -> itemPool.remove(keyFunction.apply(item)));
-                }
-                LOGGER.info("Processed batch {} (size = {}) {}", batchIndex, processed.size(), processed);
+                LOGGER.info("Processed batch {} (size = {})", batchIndex, processed.size());
             }
+
             if (isLast) {
                 batchQueue.put(DONE);
             }
             return processed;
+        }).whenComplete((res, e) -> {
+            if (e != null) {
+                readException = (Exception) e;
+                LOGGER.error("Encountered error", e);
+            }
         });
         if (parent != null) {
             f.join();
@@ -299,7 +393,7 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
         this.delegate = delegate;
     }
 
-    public void setKeyFunction(final Function<T, K> keyFunction) {
+    public void setKeyFunction(final Function<T, ?> keyFunction) {
         this.keyFunction = keyFunction;
     }
 
@@ -315,7 +409,7 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
         this.filter = filter;
     }
 
-    public void setSlaveReaderProviders(final Collection<Function<Collection<T>, ItemStreamReader<T>>> slaveReaderProviders) {
+    public void setSlaveReaderProviders(final Collection<Provider<T>> slaveReaderProviders) {
         this.slaveReaderProviders = slaveReaderProviders;
     }
 
@@ -323,7 +417,7 @@ public class ForkableItemStreamReader<T,K> extends AbstractItemCountingItemStrea
         this.batchSize = batchSize;
     }
 
-    public void addSlaveReaderProvider(final Function<Collection<T>, ItemStreamReader<T>> slaveReaderProvider) {
+    public void addSlaveReaderProvider(final Provider<T> slaveReaderProvider) {
         if (slaveReaderProviders == null) {
             slaveReaderProviders = new ArrayList<>();
         }

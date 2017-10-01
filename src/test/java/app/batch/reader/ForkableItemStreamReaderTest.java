@@ -45,13 +45,12 @@ public class ForkableItemStreamReaderTest {
         ForkableItemStreamReader<Map<String,Object>> reader = new ForkableItemStreamReader<>();
 
         ItemStreamReader<Map<String,Object>> delegate = new CompositeItemStreamReader<>(
-            createDelegateReader("name", f -> constructList(f, 1, 100), null)
+            createDelegateReader("name", f -> constructList(f, 1, 100000), null)
         );
 
-
         reader.setDelegate(delegate);
-        reader.addSlaveReaderProvider(new ForkableItemStreamReader.Provider<>(items -> getSlaveItemStreamReader("code", items), keyFunction, mergeFunction));
-        reader.addSlaveReaderProvider(new ForkableItemStreamReader.Provider<>(items -> getSlaveItemStreamReader("description", items), keyFunction, mergeFunction));
+        reader.addSlaveReaderProvider(new ForkableItemStreamReader.Provider<>(items -> getSlaveItemStreamReader("code", items), keyFunction, mergeFunction, false));
+        reader.addSlaveReaderProvider(new ForkableItemStreamReader.Provider<>(items -> getSlaveItemStreamReader("description", items), keyFunction, mergeFunction, false));
         reader.setFilter((o, ctx) -> (Integer) o.get("id") % 37 != 0);
 
         reader.setMapper((item, ctx) -> {
@@ -71,12 +70,14 @@ public class ForkableItemStreamReaderTest {
     public void testFk() throws Exception {
         ForkableItemStreamReader<Map<String,Object>> reader = new ForkableItemStreamReader<>();
         ItemStreamReader<Map<String,Object>> delegate = new CompositeItemStreamReader<>(
-            createDelegateReader("fk1", f -> constructList(f, 1, 100), null),
-            createDelegateReader("fk2", f -> constructList(f, 11, 200), null)
+            createDelegateReader("fk1", f -> constructFkList(f, 1, 34), null),
+            createDelegateReader("fk2", f -> constructFkList(f, 35, 67), null),
+            createDelegateReader("fk3", f -> constructFkList(f, 68, 100), null)
         );
         reader.setDelegate(delegate);
-        reader.addSlaveReaderProvider(new ForkableItemStreamReader.Provider<>(items -> getSlaveItemStreamReader("fk1", items), m -> m.get("fk1"), mergeFunction));
-        reader.addSlaveReaderProvider(new ForkableItemStreamReader.Provider<>(items -> getSlaveItemStreamReader("fk2", items), m -> m.get("fk2"), mergeFunction));
+        reader.addSlaveReaderProvider(new ForkableItemStreamReader.Provider<>(items -> getSlaveItemStreamReader("fk1", items), m -> m.get("fk1"), mergeFunction, true));
+        reader.addSlaveReaderProvider(new ForkableItemStreamReader.Provider<>(items -> getSlaveItemStreamReader("fk2", items), m -> m.get("fk2"), mergeFunction, false));
+        reader.addSlaveReaderProvider(new ForkableItemStreamReader.Provider<>(items -> getSlaveItemStreamReader("fk3", items), m -> m.get("fk3"), mergeFunction, false));
 
         read(reader);
     }
@@ -99,20 +100,24 @@ public class ForkableItemStreamReaderTest {
         ForkableItemStreamReader<Map<String,Object>> reader = new ForkableItemStreamReader<>();
 
         int num = getNum(field);
-        final Collection<Map<String,Object>> filtered = num == 0 ? items :
-                items.stream().filter(m -> ((Integer) m.get("id")) % num == 0).collect(Collectors.toList());
         final Function<String,Collection<Map<String,Object>>> itemSupplier = f -> {
             Collection<Map<String,Object>> r;
             int fNum = Optional.of(field.replaceAll("[^0-9]+", "")).filter(StringUtils::isNotBlank).map(Integer::valueOf).orElse(0);
             if (f.startsWith("fk")) {
-                r = filtered.stream().map(o -> {
-                    Map<String, Object> m = new ConcurrentHashMap<>();
-                    m.put("fk" + fNum, 100 * fNum);
-                    m.put("code" + fNum, 1 + 100 * fNum);
-                    return m;
-                }).collect(Collectors.toSet());
+                if (fNum < 2) {
+                    r = items.stream().map(o -> {
+                        Map<String, Object> m = new ConcurrentHashMap<>();
+                        m.put("fk" + fNum, 100 * fNum);
+                        m.put("code" + fNum, 1 + 100 * fNum);
+                        return m;
+                    }).collect(Collectors.toSet());
+                } else {
+                    r = Collections.emptyList();
+                }
             } else {
-                r = filtered.stream().map(o -> {
+                r = items.stream()
+                        .filter(m -> num == 0 || ((Integer) m.get("id")) % num == 0)
+                        .map(o -> {
                     int id = (Integer) o.get("id");
                     Map<String, Object> m = new ConcurrentHashMap<>();
                     m.put("id", id);
@@ -127,11 +132,11 @@ public class ForkableItemStreamReaderTest {
 
         if ("code".equals(field)) {
             Stream.of(2, 3, 5, 7).forEach(n -> {
-                reader.addSlaveReaderProvider(new ForkableItemStreamReader.Provider<>(c -> getSlaveItemStreamReader("d" + n, c), keyFunction, mergeFunction));
+                reader.addSlaveReaderProvider(new ForkableItemStreamReader.Provider<>(c -> getSlaveItemStreamReader("d" + n, c), keyFunction, mergeFunction, false));
             });
-        } else if (num == 3) {
+        } else if (field.startsWith("d") && num == 3) {
             Stream.of(11, 13).forEach(n -> {
-                reader.addSlaveReaderProvider(new ForkableItemStreamReader.Provider<>(c -> getSlaveItemStreamReader("d" + n, c), keyFunction, mergeFunction));
+                reader.addSlaveReaderProvider(new ForkableItemStreamReader.Provider<>(c -> getSlaveItemStreamReader("d" + n, c), keyFunction, mergeFunction, false));
             });
         }
 
@@ -179,13 +184,25 @@ public class ForkableItemStreamReaderTest {
     private Map<String,Object> construct(String field, int i) {
         Map<String, Object> m = new ConcurrentHashMap<>();
         m.put("id", i);
-        m.put(field, field.startsWith("fk") ? 100 * getNum(field) : i);
+        m.put(field, i);
+        return m;
+    }
+
+    private Map<String,Object> constructFk(String field, int i) {
+        Map<String, Object> m = new ConcurrentHashMap<>();
+        m.put("id", i);
+        m.put(field, 100 * getNum(field));
         return m;
     }
 
     private List<Map<String,Object>> constructList(String field, int lb, int ub) {
         return IntStream.rangeClosed(lb, ub).mapToObj(n -> construct(field, n)).collect(Collectors.toList());
     }
+
+    private List<Map<String,Object>> constructFkList(String field, int lb, int ub) {
+        return IntStream.rangeClosed(lb, ub).mapToObj(n -> constructFk(field, n)).collect(Collectors.toList());
+    }
+
 
     private int getNum(String str) {
         return Optional.of(str.replaceAll("[^0-9]+", "")).filter(StringUtils::isNotBlank).map(Integer::valueOf).orElse(0);
